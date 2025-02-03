@@ -1,6 +1,41 @@
 import os
 import pandas as pd
 import rpa as rpa
+import pdfplumber
+import codecs
+from docx import Document
+
+def search_word_in_file(file_path, search_word):
+    """Функция для поиска слова в файле (PDF или DOCX)"""
+    file_extension = file_path.split('.')[-1].lower()
+
+    try:
+        if file_extension == "pdf":
+            print(f"Открываем PDF-файл: {file_path}")
+            with pdfplumber.open(file_path) as pdf:
+                for page in pdf.pages:
+                    text = page.extract_text()
+                    if text and search_word.lower() in text.lower():
+                        print(f"✅ Слово '{search_word}' найдено в файле {file_path}")
+                        return True
+            print(f"❌ Слово '{search_word}' не найдено в {file_path}")
+
+        elif file_extension in ["doc", "docx"]:
+            print(f"Открываем Word-файл: {file_path}")
+            doc = Document(file_path)
+            for paragraph in doc.paragraphs:
+                if search_word.lower() in paragraph.text.lower():
+                    print(f"✅ Слово '{search_word}' найдено в файле {file_path}")
+                    return True
+            print(f"❌ Слово '{search_word}' не найдено в {file_path}")
+
+        else:
+            print(f"⚠️ Неподдерживаемый формат файла: {file_path}")
+
+    except Exception as e:
+        print(f"❌ Ошибка обработки файла {file_path}: {e}")
+
+    return False
 
 def process_tags_file():
     # Проверяем наличие файла
@@ -22,7 +57,7 @@ def process_tags_file():
         return
 
     # Получаем список слов из первой колонки (A), исключая заголовок
-    words = data.iloc[1:, 0].dropna().tolist()
+    words = data.iloc[0:, 0].dropna().tolist()
 
     if not words:
         print("Колонка 'A' пуста. Завершаем процесс.")
@@ -71,51 +106,52 @@ def process_tags_file():
             # Нажимаем кнопку "Найти"
             print("Нажимаем кнопку 'Найти'...")
             rpa.click("//button[@name='smb' and contains(@class, 'btn-success')]")
-
-            # Ждём несколько секунд для загрузки результатов
-            print("Ждём загрузки результатов поиска...")
             rpa.wait(5)
 
-            # Открываем первое объявление из списка результатов
-            print("Проверяем наличие объявления...")
+            # Открываем объявление
             first_announcement_xpath = "//*[@id='search-result']//tr[1]//a"
             if rpa.exist(first_announcement_xpath):
                 print("Объявление найдено. Открываем...")
                 rpa.click(first_announcement_xpath)
-                rpa.wait(5)  # Ждём загрузки новой вкладки
+                rpa.wait(5)
 
-                # Кликаем в область страницы для установки фокуса
-                print("Кликаем по странице для установки фокуса...")
-                rpa.click("/html/body")
-                (rpa.keyboard('[pagedown]'))
-                rpa.wait(2)
+                announcement_url = rpa.read(first_announcement_xpath + "/@href")
+                full_url = f"https://goszakup.gov.kz{announcement_url}" if announcement_url.startswith("/") else announcement_url
+                rpa.popup(full_url)
 
-                # Проверяем наличие вкладки 'Документация'
-                print("Проверяем наличие вкладки 'Документация'...")
+                # Переход во вкладку "Документация"
                 documentation_xpath = "//*[text()='Документация']"
                 if rpa.exist(documentation_xpath):
-                    print("Переключение на новую вкладку успешно.")
-
-                    # Переходим во вкладку "Документация"
-                    print("Переходим во вкладку 'Документация'...")
                     rpa.click(documentation_xpath)
                     rpa.wait(2)
 
-                    # Ищем "Техническая спецификация"
-                    print("Ищем 'Техническая спецификация'...")
+                    # Нажатие на кнопку "Перейти"
                     tech_spec_xpath = "//*[contains(text(), 'Техническая спецификация')]/following-sibling::td/button[contains(text(), 'Перейти')]"
                     if rpa.exist(tech_spec_xpath):
-                        print(f"Техническая спецификация найдена. Открываем...")
                         rpa.click(tech_spec_xpath)
                         rpa.wait(3)
-                    else:
-                        print(f"Техническая спецификация отсутствует. Пропускаем объявление.")
-                else:
-                    print("Ошибка: Робот не переключился на новую вкладку.")
-
-            else:
-                print(f"Объявление для слова '{word}' не найдено.")
-
+                        # Обрабатываем файлы
+                        file_links = rpa.read("//*[@id='ModalShowFilesBody']//a[contains(@href, 'download_file')]/@href")
+                        if isinstance(file_links, str):
+                            file_links = [file_links]
+                        
+                        for file_link in file_links:
+                            file_url = f"https://v3bl.goszakup.gov.kz{file_link}" if file_link.startswith("/") else file_link
+                            print(f"Скачиваем файл: {file_url}")
+                            rpa.url(file_url)
+                            rpa.wait(3)
+                            
+                            file_name = rpa.read(f"//*[@id='ModalShowFilesBody']//a[@href='{file_link}']")
+                            # Декодируем юникод-строку
+                            file_name = codecs.decode(file_name, 'unicode_escape')
+                            file_path = os.path.join(os.getcwd(), file_name)
+                            
+                            print(file_name, file_path)
+                            if search_word_in_file(file_path, word):
+                                print("✅ Слово найдено, переходим к следующему этапу...")
+                                break
+                            else:
+                                print("❌ Слово не найдено, продолжаем проверку других файлов...")
         except Exception as e:
             print(f"Ошибка при обработке слова '{word}': {e}")
 
@@ -123,6 +159,5 @@ def process_tags_file():
     print("Завершаем работу RPA...")
     rpa.close()
 
-# Запуск функции
 if __name__ == "__main__":
     process_tags_file()
