@@ -168,11 +168,13 @@ for word in search_words:
             print(announcement_xpath)
             print(f"\nОбрабатываем объявление {unique_id}...")
             r.click(f"//*[@id='search-result']//tr[{announcement_index}]//a")
+            
             print(f"//*[@id='search-result']//tr[{announcement_index}]//a")
             time.sleep(3)
             # Читаем ссылку объявления и формируем полный URL
             announcement_url = r.read(announcement_xpath + "/@href")
             full_url = f"https://goszakup.gov.kz{announcement_url}" if announcement_url.startswith("/") else announcement_url
+            print(full_url)
             # Открываем объявление через r.popup(), чтобы перевести фокус на новое окно
             r.popup(full_url)
             time.sleep(3)
@@ -218,16 +220,17 @@ for word in search_words:
                 # Из первой колонки получаем номер лота
                 lot_xpath = file_row_xpath + "/td[1]"
                 lot_number = r.read(lot_xpath).strip()
-                #lot_number = codecs.decode(lot_number, 'unicode-escape')
+                lot_number = codecs.decode(lot_number, 'unicode-escape')
                 # Из второй колонки получаем ссылку и имя файла
                 file_link_xpath = file_row_xpath + "/td[2]/a"
                 file_url = r.read(file_link_xpath + "/@href").strip()
                 file_name = r.read(file_link_xpath).strip()
-                #file_name = codecs.decode(file_name, 'unicode_escape')
+                file_name = codecs.decode(file_name, 'unicode_escape')
                 print(f"Обрабатываем файл: {file_name} (Лот: {lot_number})")
                 
                 # Кликаем по ссылке для скачивания файла
-                r.click(f"//*[text()='{file_name}']")
+                r.url(file_url)
+                
                 print(file_link_xpath)
                 # Ожидаем, что файл скачан в текущую папку с учётом нормализации имени
                 download_path = find_downloaded_file(file_name, os.getcwd(), timeout=60)
@@ -237,7 +240,7 @@ for word in search_words:
                     continue
                 else:
                     print(f"Найден скачанный файл: {download_path}")
-                
+
                 # Поиск искомого слова в файле (в зависимости от расширения)
                 found = False
                 if file_name.lower().endswith('.pdf'):
@@ -291,10 +294,11 @@ for word in search_words:
                     f.write(str(ann) + "\n")
             
             # Закрываем всплывающее окно с объявлением и возвращаемся к списку объявлений
-            r.keyboard("[ctrl]w")
+            
             time.sleep(3)
-            r.popup("https://goszakup.gov.kz/ru/search/announce")
-            print("Переход обратно на ", back_url)
+            r.popup(back_url)
+            r.keyboard("[ctrl]w")
+            print("Переход обратно на", back_url)
             announcement_index += 1
 
 # После обработки всех слов и объявлений отправляем письмо с файлом мониторинга
